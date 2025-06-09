@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
+import opcua
 
 from example_interfaces.srv import AddTwoInts
 from functools import partial

@@ -31,11 +31,11 @@ class pubnsub(Node):
 
     def Subcallback_(self, msg):
         xyz = Int64()
-        self.get_logger().info(f"Number received: {msg.data}")
+        # self.get_logger().info(f"Number received: {msg.data}")
         self.counter_ += msg.data
         xyz.data = self.counter_
         self.publisher2_.publish(xyz)
-        self.get_logger().info(f"Published: {xyz.data}")
+        # self.get_logger().info(f"Published: {xyz.data}")
 
 
 def main(args=None):
