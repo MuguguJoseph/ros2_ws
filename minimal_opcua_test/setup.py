@@ -29,6 +29,7 @@ setup(
             "min_write_once_only=minimal_opcua_test.min_write_once_only:main",
             "min_write_read=minimal_opcua_test.min_write_read:main",
             "min_write_read_pose=minimal_opcua_test.min_write_read_pose:main",
+            "min_write_jointstates=minimal_opcua_test.min_write_jointstates:main",
         ],
     },
 )
