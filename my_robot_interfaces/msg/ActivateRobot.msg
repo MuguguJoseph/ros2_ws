@@ -1,0 +1,1 @@
+bool activate_robot_state

@@ -13,19 +13,21 @@ class MinimalOpcUaClient(Node):
         self.get_logger().info("Starting  OPC UA Client Node...")
 
         # --- ROS2 Parameters for Configuration ---
-        self.declare_parameter("opcua_server_url", "opc.tcp://192.168.0.1:4840")
+        self.declare_parameter(
+            "opcua_server_url", "opc.tcp://mugugu:53530/OPCUA/SimulationServer"
+        )
         # opc.tcp://mugugu:53530/OPCUA/SimulationServer
         # opc.tcp://192.168.0.1:4840
         self.declare_parameter("opcua_user", "")
         self.declare_parameter("opcua_password", "")
 
         # Node IDs for boolean variables
-        self.declare_parameter("activate_plc_node_id", 'ns=3;s="robot"."activate_plc"')
+        self.declare_parameter("activate_plc_node_id", 's="robot"."activate_plc"')
         # s="robot"."activate_plc"
         # ns=3;s="activate_plc"
         self.declare_parameter(
             "activate_robot_node_id",
-            'ns=3;s="robot"."activate_robot"',
+            'ns=3;s="activate_robot"',
             # s="robot"."activate_robot"
             # ns=3;s="activate_robot"
         )
@@ -37,7 +39,7 @@ class MinimalOpcUaClient(Node):
         self.joint_pos_node_ids = []
         for i in range(7):
             node_param_name = f"opcua_joint_pos_{i+1}_node_id"
-            default_node_id = f'ns=3;s="robot"."xArm.Joint_{i+1}Pos"'
+            default_node_id = f'ns=3;s="xArm.Joint{i+1}_Pos"'
             # s="robot"."xArm.Joint_{i+1}Pos"
             # s="robot"."xArm.Joint{i+1}_Pos"
             # s= "xArm.Joint{i+1}_Pos"
@@ -117,7 +119,7 @@ class MinimalOpcUaClient(Node):
                         self._write_joint_states_to_opcua()
                         self._write_activate_plc()
                         self._read_activate_robot()
-                        self._read_gripper_arm()
+                        self._write_gripper_arm()
 
                         # Simple call to check connection
                         self.client.get_endpoints()
@@ -173,17 +175,20 @@ class MinimalOpcUaClient(Node):
         except Exception as e:
             self.get_logger().error(f"activate_robot read error: {e}")
 
-    def _read_gripper_arm(self):
+    def _write_gripper_arm(self):
         """Read gripper_arm boolean from OPC UA server."""
         try:
-            self.gripper_arm_state = self.gripper_arm_node.get_value()
-            self.get_logger().debug(f"Read gripper_arm: {self.gripper_arm_state}")
-
-            # Here you would add logic to act on the gripper_arm_state
-            if self.gripper_arm_state:
-                self.get_logger().info("Gripper activation signal received!")
+            dv = ua.DataValue(
+                ua.Variant(self.gripper_arm_state, ua.VariantType.Boolean)
+            )
+            self.get_logger().info(
+                f"Successfully wrote boolean '{self.gripper_arm_state}' to '{self.gripper_arm_node}'"
+            )
+            self.get_logger().debug(
+                f"Wrote gripper_arm_state: {self.gripper_arm_state}"
+            )
         except Exception as e:
-            self.get_logger().error(f"gripper_arm read error: {e}")
+            self.get_logger().error(f"gripper_arm_write write error: {e}")
 
     def set_activate_plc(self, state: bool):
         """Public method to set the activate_plc state."""

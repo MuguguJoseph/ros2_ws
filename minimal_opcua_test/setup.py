@@ -32,6 +32,8 @@ setup(
             "min_write_jointstates=minimal_opcua_test.min_write_jointstates:main",
             "min_write_jointstates1=minimal_opcua_test.min_write_jointstates1:main",
             "min_write_jointstates2=minimal_opcua_test.min_write_read_jointstates2:main",
+            "min_write_jointstates3=minimal_opcua_test.min_write_read_jointstates3:main",
+            "min_write_jointstates4=minimal_opcua_test.min_write_read_jointstates4:main",
         ],
     },
 )

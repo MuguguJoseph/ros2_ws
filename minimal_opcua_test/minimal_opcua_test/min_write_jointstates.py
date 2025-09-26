@@ -17,7 +17,11 @@ class MinimalOpcUaClient(Node):
         )
 
         # --- ROS2 Parameters for Configuration ---
-        self.declare_parameter("opcua_server_url", "opc.tcp://192.168.0.1:4840")
+        self.declare_parameter(
+            "opcua_server_url", "opc.tcp://mugugu:53530/OPCUA/SimulationServer"
+        )
+        # opc.tcp://mugugu:53530/OPCUA/SimulationServer
+        # opc.tcp://192.168.0.1:4840
 
         # Node IDs for xArm7 Joint Positions (assuming 7 joints)
         # YOU MUST UPDATE THESE WITH YOUR ACTUAL NODE IDs FROM THE SERVER!
@@ -26,6 +30,7 @@ class MinimalOpcUaClient(Node):
             node_param_name = f"opcua_joint_pos_{i+1}_node_id"
             # Example symbolic name. Adjust 'ns=X;s="YourPrefix.JointN_Pos"' as per your server config.
             default_node_id = f'ns=3;s="robot"."xArm.Joint_{i+1}Pos"'
+            # s="robot"."xArm.Joint_{i+1}Pos"
             self.declare_parameter(node_param_name, default_node_id)
             self.joint_pos_node_ids.append(self.get_parameter(node_param_name).value)
 

@@ -16,6 +16,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetLed.srv"
   "msg/Turtle.msg"
   "msg/TurtleArray.msg"
+  "msg/ActivateRobot.msg"
 
 
   

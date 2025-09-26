@@ -6,8 +6,11 @@
         "limitSymbolsToIncludedHeaders": false
       },
       "includePath": [
-        "/opt/ros/humble/include/**",
-        "/usr/include/**"
+
+        "${workspaceFolder}/**",
+        "/opt/ros/humble/include",  // Update 'humble' to your ROS 2 distro
+        "~/ros2_ws/install/my_robot_interfaces/include"
+      
       ],
       "name": "ROS",
       "intelliSenseMode": "gcc-x64",
