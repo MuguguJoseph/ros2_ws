@@ -4,7 +4,6 @@ from rclpy.node import Node
 from opcua import Client, ua
 import time
 import threading
-import math
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool  # Use standard Bool message type for activation signal
 
@@ -15,24 +14,25 @@ class MinimalOpcUaClient(Node):
         self.get_logger().info("Starting OPC UA Client Node...")
 
         # --- ROS2 Parameters for Configuration ---
-        self.declare_parameter("opcua_server_url", "opc.tcp://172.16.40.3:4840")
+        self.declare_parameter(
+            "opcua_server_url", "opc.tcp://mugugu:53530/OPCUA/SimulationServer"
+        )
         # opc.tcp://mugugu:53530/OPCUA/SimulationServer
-        # opcua_server_url, opc.tcp://172.16.40.3:4840
+        # opc.tcp://192.168.0.1:4840
         self.declare_parameter("opcua_user", "")
         self.declare_parameter("opcua_password", "")
 
         # Node IDs for boolean variables
-        self.declare_parameter(
-            "activate_plc_node_id", 'ns=3;s="robot"."activate_robot"'
-        )
-        # ns=3;s="robot"."activate_robot"
+        self.declare_parameter("activate_plc_node_id", 'ns=3;s="activate_plc"')
+        # s="robot"."activate_plc"
         # ns=3;s="activate_plc"
         self.declare_parameter(
-            "activate_robot_node_id", 'ns=3;s="robot"."activate_robot"'
+            "activate_robot_node_id",
+            'ns=3;s="activate_robot"',
         )
-        # ns=3;s="robot"."activate_robot"
+        # s="robot"."activate_robot"
         # ns=3;s="activate_robot"
-        self.declare_parameter("gripper_arm_node_id", 'ns=3;s="robot"."gripper_arm"')
+        self.declare_parameter("gripper_arm_node_id", 'ns=3;s="gripper_arm"')
         # ns=3;s="robot"."gripper_arm"
         # ns=3;s="gripper_arm"
 
@@ -40,21 +40,12 @@ class MinimalOpcUaClient(Node):
         self.joint_pos_node_ids = []
         for i in range(7):
             node_param_name = f"opcua_joint_pos_{i+1}_node_id"
-            default_node_id = f'ns=3;s="robot"."xArm.Joint_{i+1}Pos"'
-            # ns=3;s="robot"."xArm.Joint_{i+1}Pos"
-            # ns=3;s= "xArm.Joint{i+1}_Pos"
+            default_node_id = f'ns=3;s= "xArm.Joint{i+1}_Pos"'
+            # s="robot"."xArm.Joint_{i+1}Pos"
+            # s="robot"."xArm.Joint{i+1}_Pos"
+            # s= "xArm.Joint{i+1}_Pos"
             self.declare_parameter(node_param_name, default_node_id)
             self.joint_pos_node_ids.append(self.get_parameter(node_param_name).value)
-
-        # Node IDs for xArm7 Joint Velocities
-        self.joint_vel_node_ids = []
-        for i in range(7):
-            node_param_name = f"opcua_joint_vel_{i+1}_node_id"
-            default_node_id = f'ns=3;s="robot"."velocity_{i+1}"'
-            # ns=3;s="robot"."velocity_{i+1}"
-            # ns=3;s="velocity_{i+1}"
-            self.declare_parameter(node_param_name, default_node_id)
-            self.joint_vel_node_ids.append(self.get_parameter(node_param_name).value)
 
         self.opcua_url = self.get_parameter("opcua_server_url").value
         self.opcua_user = self.get_parameter("opcua_user").value
@@ -70,7 +61,7 @@ class MinimalOpcUaClient(Node):
         self.activate_robot_state = False
         self.gripper_arm_state = False
 
-        # --- ROS2 Publisher for activate_robot_state ---
+        # --- NEW: ROS2 Publisher for activate_robot_state ---
         self.activate_robot_pub = self.create_publisher(
             Bool, "activate_robot_signal", 10
         )
@@ -89,11 +80,9 @@ class MinimalOpcUaClient(Node):
 
         self.connected = False
         self.opcua_connection_lock = threading.Lock()
-        self.latest_joint_positions = [0.0] * 7  # Store in radians
-        self.latest_joint_velocities = [0.0] * 7  # Store velocities in rad/s
-        self.latest_drive_joint = None  # Store drive_joint value
+        self.latest_joint_positions = [0.0] * 7
+        self.latest_drive_joint = None  # NEW: store drive_joint value
         self.joint_states_received_first_time = False
-        self.joint_velocities_received_first_time = False
 
         # Track previous state to avoid spamming the topic
         self.previous_activate_robot_state = None
@@ -104,40 +93,20 @@ class MinimalOpcUaClient(Node):
         self.opcua_thread.start()
 
     def joint_state_callback(self, msg: JointState):
-        """Handle incoming JointState messages (positions in radians, velocities in rad/s)."""
-        # Extract joint positions
+        """Handle incoming JointState messages."""
         if len(msg.position) >= 7:
             self.latest_joint_positions = list(msg.position[:7])
             self.joint_states_received_first_time = True
-            self.get_logger().debug(
-                f"Received joint positions (radians): {self.latest_joint_positions}"
-            )
 
-        # Extract joint velocities
-        if len(msg.velocity) >= 7:
-            self.latest_joint_velocities = list(msg.velocity[:7])
-            self.joint_velocities_received_first_time = True
-            self.get_logger().debug(
-                f"Received joint velocities (rad/s): {self.latest_joint_velocities}"
-            )
-
-        # Extract drive_joint if available (it's at index 7, the 8th element)
+        # Extract drive_joint if available
         if len(msg.position) >= 8:
-            self.latest_drive_joint = msg.position[7]
+            self.latest_drive_joint = msg.position[8]
             self.get_logger().debug(
-                f"Successfully received drive_joint value: {self.latest_drive_joint:.6f}"
+                f"Received drive_joint value: {self.latest_drive_joint:.4f}"
             )
-        else:
-            self.get_logger().debug(
-                f"drive_joint not available - message has only {len(msg.position)} positions"
-            )
-
-    def _radians_to_degrees(self, radians):
-        """Convert radians to degrees."""
-        return math.degrees(radians)
 
     def _opcua_worker_thread(self):
-        """Thread to manage OPC UA connection and operations."""
+        # """Thread to manage OPC UA connection and operations."""
         while rclpy.ok():
             with self.opcua_connection_lock:
                 if not self.connected:
@@ -165,10 +134,9 @@ class MinimalOpcUaClient(Node):
                     try:
                         # Perform all OPC UA operations
                         self._write_joint_states_to_opcua()
-                        self._write_joint_velocities_to_opcua()  # NEW: Write velocities
                         self._write_activate_plc()
                         self._read_activate_robot()
-                        self._write_gripper_arm()
+                        self._write_gripper_arm()  # now writes float drive_joint value
 
                         # Simple call to check connection
                         self.client.get_endpoints()
@@ -178,63 +146,28 @@ class MinimalOpcUaClient(Node):
             time.sleep(2)
 
     def _write_joint_states_to_opcua(self):
-        """Write joint states to OPC UA server (converted from radians to degrees)."""
+        # """Write joint states to OPC UA server."""
         if not self.connected or not self.joint_states_received_first_time:
             return
 
         try:
-            log_message_rad = "Joint Positions (radians): "
-            log_message_deg = "Joint Positions (degrees): "
-
-            for i, position_rad in enumerate(self.latest_joint_positions):
-                # Convert radians to degrees
-                position_deg = self._radians_to_degrees(position_rad)
-
-                # Write degrees to OPC UA server
+            log_message = "Successfully wrote Joint Positions: "
+            for i, position in enumerate(self.latest_joint_positions):
                 node_id = self.joint_pos_node_ids[i]
                 joint_node = self.client.get_node(node_id)
                 dv_joint_pos = ua.DataValue(
-                    ua.Variant(float(position_deg), ua.VariantType.Float)
+                    ua.Variant(float(position), ua.VariantType.Float)
                 )
                 joint_node.set_value(dv_joint_pos)
+                log_message += f"Joint{i+1}={position:.4f} "
 
-                log_message_rad += f"J{i+1}={position_rad:.4f} "
-                log_message_deg += f"J{i+1}={position_deg:.4f}° "
-
-            self.get_logger().info(log_message_rad.strip())
-            self.get_logger().info(log_message_deg.strip() + " [Written to OPC UA]")
-
+            self.get_logger().info(log_message.strip())
         except Exception as e:
             self.get_logger().error(f"JointState write error: {e}")
             raise
 
-    def _write_joint_velocities_to_opcua(self):
-        """Write joint velocities to OPC UA server (in rad/s)."""
-        if not self.connected or not self.joint_velocities_received_first_time:
-            return
-
-        try:
-            log_message_vel = "Joint Velocities (rad/s): "
-
-            for i, velocity_rad_s in enumerate(self.latest_joint_velocities):
-                # Write velocities directly to OPC UA server (in rad/s)
-                node_id = self.joint_vel_node_ids[i]
-                joint_vel_node = self.client.get_node(node_id)
-                dv_joint_vel = ua.DataValue(
-                    ua.Variant(float(velocity_rad_s), ua.VariantType.Float)
-                )
-                joint_vel_node.set_value(dv_joint_vel)
-
-                log_message_vel += f"V{i+1}={velocity_rad_s:.4f} "
-
-            self.get_logger().info(log_message_vel.strip() + " [Written to OPC UA]")
-
-        except Exception as e:
-            self.get_logger().error(f"Joint Velocity write error: {e}")
-            raise
-
     def _write_activate_plc(self):
-        """Write activate_plc boolean to OPC UA server."""
+        # """Write activate_plc boolean to OPC UA server."""
         try:
             dv = ua.DataValue(
                 ua.Variant(self.activate_plc_state, ua.VariantType.Boolean)
@@ -245,43 +178,58 @@ class MinimalOpcUaClient(Node):
             self.get_logger().error(f"activate_plc write error: {e}")
 
     def _read_activate_robot(self):
-        """Read activate_robot boolean from OPC UA server and publish to ROS2 topic."""
+        # """Read activate_robot boolean from OPC UA server and publish single pulse to ROS2 topic."""
         try:
             new_state = self.activate_robot_node.get_value()
 
-            # Only update and publish if state changed
+            # Only trigger on transition from False to True
             if new_state != self.activate_robot_state:
+                previous_state = self.activate_robot_state
                 self.activate_robot_state = new_state
+
                 self.get_logger().debug(
-                    f"Read activate_robot: {self.activate_robot_state}"
+                    f"State changed from {previous_state} to {self.activate_robot_state}"
                 )
 
-                # Publish to ROS2 topic
-                self._publish_activate_robot_state()
-
-                # Log state changes for debugging
-                if self.activate_robot_state:
+                # Only publish pulse when transitioning from False to True
+                if previous_state is False and self.activate_robot_state is True:
+                    self._publish_activate_robot_pulse()
                     self.get_logger().info(
-                        "Robot activation signal received! Publishing to activate_robot_signal topic."
+                        "Robot activation signal received! Publishing single pulse to activate_robot_signal topic."
                     )
-                else:
-                    self.get_logger().info("Robot deactivation signal received!")
+                elif previous_state is True and self.activate_robot_state is False:
+                    self.get_logger().info(
+                        "Robot deactivation signal received (no pulse sent)."
+                    )
 
         except Exception as e:
             self.get_logger().error(f"activate_robot read error: {e}")
 
-    def _publish_activate_robot_state(self):
-        """Publish the activate_robot_state to ROS2 topic."""
+    def _publish_activate_robot_pulse(self):
+        # """Publish a single pulse (True) to ROS2 topic when activation occurs."""
         msg = Bool()
-        msg.data = self.activate_robot_state
-        # If the state has changed, publish it
+        msg.data = True  # Always send True as a pulse signal
+
         self.activate_robot_pub.publish(msg)
         self.get_logger().debug(
-            f"Published activate_robot_state: {self.activate_robot_state} to activate_robot_signal topic"
+            "Published single activation pulse (True) to activate_robot_signal topic"
         )
 
+    # def _write_gripper_arm(self):
+    #     """Write gripper_arm boolean to OPC UA server."""
+    #     try:
+    #         dv = ua.DataValue(
+    #             ua.Variant(self.gripper_arm_state, ua.VariantType.Boolean)
+    #         )
+    #         self.gripper_arm_node.set_value(dv)
+    #         self.get_logger().debug(
+    #             f"Wrote gripper_arm_state: {self.gripper_arm_state}"
+    #         )
+    #     except Exception as e:
+    #         self.get_logger().error(f"gripper_arm write error: {e}")
+
     def _write_gripper_arm(self):
-        """Write drive_joint value to OPC UA server (float)."""
+        # """Write drive_joint value to OPC UA server (float)."""
         if self.latest_drive_joint is None:
             self.get_logger().debug("No drive_joint value yet, skipping OPC UA write")
             return
@@ -299,22 +247,22 @@ class MinimalOpcUaClient(Node):
             self.get_logger().error(f"drive_joint write error: {e}")
 
     def set_activate_plc(self, state: bool):
-        """Public method to set the activate_plc state."""
+        # """Public method to set the activate_plc state."""
         with self.opcua_connection_lock:
             self.activate_plc_state = state
             if self.connected:
                 self._write_activate_plc()
 
     def get_activate_robot(self) -> bool:
-        """Public method to get the activate_robot state."""
+        # """Public method to get the activate_robot state."""
         return self.activate_robot_state
 
     def get_gripper_arm(self) -> bool:
-        """Public method to get the gripper_arm state."""
+        # """Public method to get the gripper_arm state."""
         return self.gripper_arm_state
 
     def on_shutdown(self):
-        """Clean up resources on node shutdown."""
+        # """Clean up resources on node shutdown."""
         if self.connected:
             self.get_logger().info("Disconnecting from OPC UA server...")
             try:

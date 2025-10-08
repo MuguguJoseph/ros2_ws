@@ -15,24 +15,25 @@ class MinimalOpcUaClient(Node):
         self.get_logger().info("Starting OPC UA Client Node...")
 
         # --- ROS2 Parameters for Configuration ---
-        self.declare_parameter("opcua_server_url", "opc.tcp://172.16.40.3:4840")
+        self.declare_parameter(
+            "opcua_server_url", "opc.tcp://mugugu:53530/OPCUA/SimulationServer"
+        )
         # opc.tcp://mugugu:53530/OPCUA/SimulationServer
-        # opcua_server_url, opc.tcp://172.16.40.3:4840
+        # opc.tcp://192.168.0.1:4840
         self.declare_parameter("opcua_user", "")
         self.declare_parameter("opcua_password", "")
 
         # Node IDs for boolean variables
-        self.declare_parameter(
-            "activate_plc_node_id", 'ns=3;s="robot"."activate_robot"'
-        )
-        # ns=3;s="robot"."activate_robot"
+        self.declare_parameter("activate_plc_node_id", 'ns=3;s="activate_plc"')
+        # s="robot"."activate_plc"
         # ns=3;s="activate_plc"
         self.declare_parameter(
-            "activate_robot_node_id", 'ns=3;s="robot"."activate_robot"'
+            "activate_robot_node_id",
+            'ns=3;s="activate_robot"',
         )
-        # ns=3;s="robot"."activate_robot"
+        # s="robot"."activate_robot"
         # ns=3;s="activate_robot"
-        self.declare_parameter("gripper_arm_node_id", 'ns=3;s="robot"."gripper_arm"')
+        self.declare_parameter("gripper_arm_node_id", 'ns=3;s="gripper_arm"')
         # ns=3;s="robot"."gripper_arm"
         # ns=3;s="gripper_arm"
 
@@ -40,21 +41,12 @@ class MinimalOpcUaClient(Node):
         self.joint_pos_node_ids = []
         for i in range(7):
             node_param_name = f"opcua_joint_pos_{i+1}_node_id"
-            default_node_id = f'ns=3;s="robot"."xArm.Joint_{i+1}Pos"'
-            # ns=3;s="robot"."xArm.Joint_{i+1}Pos"
-            # ns=3;s= "xArm.Joint{i+1}_Pos"
+            default_node_id = f'ns=3;s= "xArm.Joint{i+1}_Pos"'
+            # s="robot"."xArm.Joint_{i+1}Pos"
+            # s="robot"."xArm.Joint{i+1}_Pos"
+            # s= "xArm.Joint{i+1}_Pos"
             self.declare_parameter(node_param_name, default_node_id)
             self.joint_pos_node_ids.append(self.get_parameter(node_param_name).value)
-
-        # Node IDs for xArm7 Joint Velocities
-        self.joint_vel_node_ids = []
-        for i in range(7):
-            node_param_name = f"opcua_joint_vel_{i+1}_node_id"
-            default_node_id = f'ns=3;s="robot"."velocity_{i+1}"'
-            # ns=3;s="robot"."velocity_{i+1}"
-            # ns=3;s="velocity_{i+1}"
-            self.declare_parameter(node_param_name, default_node_id)
-            self.joint_vel_node_ids.append(self.get_parameter(node_param_name).value)
 
         self.opcua_url = self.get_parameter("opcua_server_url").value
         self.opcua_user = self.get_parameter("opcua_user").value
@@ -70,7 +62,7 @@ class MinimalOpcUaClient(Node):
         self.activate_robot_state = False
         self.gripper_arm_state = False
 
-        # --- ROS2 Publisher for activate_robot_state ---
+        # --- NEW: ROS2 Publisher for activate_robot_state ---
         self.activate_robot_pub = self.create_publisher(
             Bool, "activate_robot_signal", 10
         )
@@ -90,10 +82,8 @@ class MinimalOpcUaClient(Node):
         self.connected = False
         self.opcua_connection_lock = threading.Lock()
         self.latest_joint_positions = [0.0] * 7  # Store in radians
-        self.latest_joint_velocities = [0.0] * 7  # Store velocities in rad/s
-        self.latest_drive_joint = None  # Store drive_joint value
+        self.latest_drive_joint = None  # NEW: store drive_joint value
         self.joint_states_received_first_time = False
-        self.joint_velocities_received_first_time = False
 
         # Track previous state to avoid spamming the topic
         self.previous_activate_robot_state = None
@@ -104,8 +94,7 @@ class MinimalOpcUaClient(Node):
         self.opcua_thread.start()
 
     def joint_state_callback(self, msg: JointState):
-        """Handle incoming JointState messages (positions in radians, velocities in rad/s)."""
-        # Extract joint positions
+        """Handle incoming JointState messages (in radians)."""
         if len(msg.position) >= 7:
             self.latest_joint_positions = list(msg.position[:7])
             self.joint_states_received_first_time = True
@@ -113,17 +102,9 @@ class MinimalOpcUaClient(Node):
                 f"Received joint positions (radians): {self.latest_joint_positions}"
             )
 
-        # Extract joint velocities
-        if len(msg.velocity) >= 7:
-            self.latest_joint_velocities = list(msg.velocity[:7])
-            self.joint_velocities_received_first_time = True
-            self.get_logger().debug(
-                f"Received joint velocities (rad/s): {self.latest_joint_velocities}"
-            )
-
         # Extract drive_joint if available (it's at index 7, the 8th element)
         if len(msg.position) >= 8:
-            self.latest_drive_joint = msg.position[7]
+            self.latest_drive_joint = msg.position[7]  # FIXED: Changed from [8] to [7]
             self.get_logger().debug(
                 f"Successfully received drive_joint value: {self.latest_drive_joint:.6f}"
             )
@@ -165,10 +146,9 @@ class MinimalOpcUaClient(Node):
                     try:
                         # Perform all OPC UA operations
                         self._write_joint_states_to_opcua()
-                        self._write_joint_velocities_to_opcua()  # NEW: Write velocities
                         self._write_activate_plc()
                         self._read_activate_robot()
-                        self._write_gripper_arm()
+                        self._write_gripper_arm()  # now writes float drive_joint value
 
                         # Simple call to check connection
                         self.client.get_endpoints()
@@ -206,31 +186,6 @@ class MinimalOpcUaClient(Node):
 
         except Exception as e:
             self.get_logger().error(f"JointState write error: {e}")
-            raise
-
-    def _write_joint_velocities_to_opcua(self):
-        """Write joint velocities to OPC UA server (in rad/s)."""
-        if not self.connected or not self.joint_velocities_received_first_time:
-            return
-
-        try:
-            log_message_vel = "Joint Velocities (rad/s): "
-
-            for i, velocity_rad_s in enumerate(self.latest_joint_velocities):
-                # Write velocities directly to OPC UA server (in rad/s)
-                node_id = self.joint_vel_node_ids[i]
-                joint_vel_node = self.client.get_node(node_id)
-                dv_joint_vel = ua.DataValue(
-                    ua.Variant(float(velocity_rad_s), ua.VariantType.Float)
-                )
-                joint_vel_node.set_value(dv_joint_vel)
-
-                log_message_vel += f"V{i+1}={velocity_rad_s:.4f} "
-
-            self.get_logger().info(log_message_vel.strip() + " [Written to OPC UA]")
-
-        except Exception as e:
-            self.get_logger().error(f"Joint Velocity write error: {e}")
             raise
 
     def _write_activate_plc(self):
